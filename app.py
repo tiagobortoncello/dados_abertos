@@ -10,31 +10,44 @@ st.set_page_config(layout="wide")
 if "GEMINI_API_KEY" in st.secrets:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 else:
-    st.error("Chave da API do Gemini não encontrada nos segredos do Streamlit. Verifique a configuração.")
+    st.error("Chave da API do Gemini não encontrada nos segredos do Streamlit. Por favor, adicione-a nas configurações do aplicativo.")
 
 # URL da API da ALMG
 url = "https://dadosabertos.almg.gov.br/api/v2/proposicoes/pesquisa/avancada"
 
 @st.cache_data(ttl=3600)
 def carregar_dados_da_api():
+    """Faz a chamada à API e retorna um DataFrame do pandas."""
     try:
+        st.info("Buscando dados na API da ALMG...")
         response = requests.get(url, params={"formato": "json"})
         response.raise_for_status() 
         dados = response.json()
+        
+        # O .get('list', []) evita erros se a chave 'list' não existir
+        # Verifique esta linha se estiver usando outra API!
         df = pd.DataFrame(dados.get('list', []))
+        
         if not df.empty:
             df = df[['siglaTipo', 'numero', 'ano', 'ementa', 'apresentacao']]
         return df
+    except requests.exceptions.HTTPError as e:
+        st.error(f"Erro no servidor da API: {e}. Verifique o link e tente novamente.")
+        return pd.DataFrame()
     except requests.exceptions.RequestException as e:
-        st.error(f"Erro ao carregar os dados da API: {e}. Tente novamente mais tarde.")
+        st.error(f"Erro de conexão com a API: {e}. Verifique sua conexão com a internet.")
+        return pd.DataFrame()
+    except Exception as e:
+        st.error(f"Erro ao processar os dados da API: {e}. Verifique a estrutura JSON.")
         return pd.DataFrame()
 
 # Carrega os dados da API
 df_proposicoes = carregar_dados_da_api()
 
 st.title("Assistente de Dados da ALMG (Beta)")
-st.subheader("Faça uma pergunta sobre as proposições")
+st.subheader("Faça uma pergunta sobre as proposições ou peça um gráfico")
 
+# O assistente só é exibido se os dados foram carregados e a chave do Gemini está configurada
 if not df_proposicoes.empty and genai.api_key:
     user_query = st.text_input("Sua pergunta:", placeholder="Ex: Quantas proposições foram apresentadas por ano?")
     
@@ -83,15 +96,12 @@ if not df_proposicoes.empty and genai.api_key:
                 text_part = parts[0].strip()
                 code_part = parts[1].split("```")[0].strip()
                 
-                # Exibe a parte textual da resposta
                 if text_part:
                     st.markdown(text_part)
 
-                # Exibe e executa o código
                 st.code(code_part, language='python')
                 exec(code_part)
             else:
-                # Se não houver código, exibe apenas a resposta textual
                 st.markdown(response_text)
             
         except Exception as e:
