@@ -7,10 +7,11 @@ import altair as alt
 st.set_page_config(layout="wide")
 
 # Configura a chave da API do Gemini de forma segura
-if "GEMINI_API_KEY" in st.secrets:
+try:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-else:
-    st.error("Chave da API do Gemini não encontrada nos segredos do Streamlit. Por favor, adicione-a nas configurações do aplicativo.")
+except Exception as e:
+    st.error(f"Erro na configuração da API do Gemini: {e}")
+    st.info("Por favor, adicione sua chave de API nas configurações do aplicativo no Streamlit Cloud.")
 
 # URL da API de Teste (Open Library API)
 url = "https://openlibrary.org/search.json?q=python"
