@@ -33,7 +33,7 @@ def carregar_dados_da_api():
 df_proposicoes = carregar_dados_da_api()
 
 st.title("Assistente de Dados da ALMG (Beta)")
-st.subheader("Faça uma pergunta sobre as proposições ou peça um gráfico")
+st.subheader("Faça uma pergunta sobre as proposições")
 
 if not df_proposicoes.empty and genai.api_key:
     user_query = st.text_input("Sua pergunta:", placeholder="Ex: Quantas proposições foram apresentadas por ano?")
