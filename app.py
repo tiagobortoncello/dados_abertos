@@ -13,7 +13,7 @@ else:
     st.error("Chave da API do Gemini não encontrada nos segredos do Streamlit. Verifique a configuração.")
 
 # URL da API da ALMG
-url = "https://dadosabertos.almg.gov.br/api/v2/proposicoes/pesquisa/avancada"
+url = "https://dadosabertos.almg.gov.br/api/v2/proposicoes/pesquisa/direcionada"
 
 @st.cache_data(ttl=3600)
 def carregar_dados_da_api():
