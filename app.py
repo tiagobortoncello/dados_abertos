@@ -4,99 +4,46 @@ import requests
 import google.generativeai as genai
 import altair as alt
 
-st.set_page_config(layout="wide")
+# Seu código de configuração da API e URL...
 
-# Configura a chave da API do Gemini de forma segura
-if "GEMINI_API_KEY" in st.secrets:
-    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-else:
-    st.error("Chave da API do Gemini não encontrada nos segredos do Streamlit. Verifique a configuração.")
-
-# URL da API da ALMG
-url = "https://dadosabertos.almg.gov.br/api/v2/proposicoes/pesquisa/direcionada"
+# URL da nova API para teste
+url = "O_LINK_DA_SUA_NOVA_API_AQUI"
 
 @st.cache_data(ttl=3600)
 def carregar_dados_da_api():
     try:
+        st.info("Buscando dados na nova API...")
         response = requests.get(url, params={"formato": "json"})
+        
+        # Levanta um erro se o status code não for 200
         response.raise_for_status() 
+        
         dados = response.json()
-        df = pd.DataFrame(dados.get('list', []))
+        
+        # AQUI É O PONTO CRÍTICO:
+        # Se a nova API não tiver uma chave 'list', isso pode falhar.
+        # Ajuste a linha abaixo para a estrutura da sua nova API.
+        df = pd.DataFrame(dados.get('list', [])) 
+        
         if not df.empty:
             df = df[['siglaTipo', 'numero', 'ano', 'ementa', 'apresentacao']]
         return df
+        
+    except requests.exceptions.HTTPError as e:
+        st.error(f"Erro no servidor da API: {e}. Verifique o link e tente novamente.")
+        return pd.DataFrame()
     except requests.exceptions.RequestException as e:
-        st.error(f"Erro ao carregar os dados da API: {e}. Tente novamente mais tarde.")
+        st.error(f"Erro de conexão com a API: {e}. Verifique se o link está correto.")
+        return pd.DataFrame()
+    except Exception as e:
+        st.error(f"Erro ao processar os dados da nova API: {e}. Verifique a estrutura JSON.")
         return pd.DataFrame()
 
-# Carrega os dados da API
-df_proposicoes = carregar_dados_da_api()
-
-st.title("Assistente de Dados da ALMG (Beta)")
-st.subheader("Faça uma pergunta sobre as proposições")
+# O resto do seu código...
 
 if not df_proposicoes.empty and genai.api_key:
-    user_query = st.text_input("Sua pergunta:", placeholder="Ex: Quantas proposições foram apresentadas por ano?")
-    
-    if user_query:
-        st.info("Buscando a resposta e gerando o resultado...")
-        
-        # Converte o DataFrame para um formato de texto para o Gemini
-        data_string = df_proposicoes.to_string(index=False)
-        
-        # Constrói o prompt com instruções para gerar código proativo
-        prompt = f"""
-        Você é um assistente de dados da Assembleia Legislativa de Minas Gerais.
-        Sua função é analisar os dados fornecidos abaixo e responder à pergunta do usuário.
-
-        Se a pergunta do usuário for sobre contagens, evoluções ou comparações (ex: "quantas proposições", "por ano", "mais comuns"), além da resposta textual, inclua um bloco de código Python com um gráfico para complementar a informação.
-
-        Dados de proposições:
-        {data_string}
-
-        Instruções para gráficos:
-        - Use a biblioteca `altair` para criar os gráficos.
-        - O DataFrame se chama `df_proposicoes`.
-        - Use a formatação de bloco de código Python: ```python ... ```
-        - Exemplo de código para um gráfico de barras:
-          ```python
-          chart = alt.Chart(df_proposicoes).mark_bar().encode(
-              x=alt.X('ano:O', title='Ano'),
-              y=alt.Y('count():Q', title='Quantidade')
-          ).properties(
-              title='Número de Proposições por Ano'
-          )
-          st.altair_chart(chart, use_container_width=True)
-          ```
-
-        Pergunta do usuário: {user_query}
-        """
-        
-        try:
-            model = genai.GenerativeModel('gemini-pro')
-            response = model.generate_content(prompt)
-            response_text = response.text.strip()
-            
-            # --- Lógica para detectar e executar o código dentro da resposta ---
-            if "```python" in response_text:
-                parts = response_text.split("```python")
-                text_part = parts[0].strip()
-                code_part = parts[1].split("```")[0].strip()
-                
-                # Exibe a parte textual da resposta
-                if text_part:
-                    st.markdown(text_part)
-
-                # Exibe e executa o código
-                st.code(code_part, language='python')
-                exec(code_part)
-            else:
-                # Se não houver código, exibe apenas a resposta textual
-                st.markdown(response_text)
-            
-        except Exception as e:
-            st.error(f"Ocorreu um erro: {e}")
-            st.caption("Verifique se a sua chave da API está correta ou se a pergunta é clara.")
-
+    # ... código para a barra de pesquisa e assistente ...
 else:
-    st.warning("Dados não carregados. Não é possível usar o assistente de dados.")
+    # A mensagem de aviso abaixo agora é menos necessária,
+    # pois as mensagens de erro detalhadas serão exibidas acima.
+    st.warning("Não foi possível carregar os dados. Verifique os erros acima.")
