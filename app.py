@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import requests
 import google.generativeai as genai
+import altair as alt
 
 st.set_page_config(layout="wide")
 
@@ -11,12 +12,11 @@ if "GEMINI_API_KEY" in st.secrets:
 else:
     st.error("Chave da API do Gemini não encontrada nos segredos do Streamlit. Verifique a configuração.")
 
-# URL da API da ALMG para Proposições
+# URL da API da ALMG
 url = "https://dadosabertos.almg.gov.br/api/v2/proposicoes/pesquisa/avancada"
 
 @st.cache_data(ttl=3600)
 def carregar_dados_da_api():
-    """Faz a chamada à API da ALMG e retorna um DataFrame do pandas."""
     try:
         response = requests.get(url, params={"formato": "json"})
         response.raise_for_status() 
@@ -26,50 +26,77 @@ def carregar_dados_da_api():
             df = df[['siglaTipo', 'numero', 'ano', 'ementa', 'apresentacao']]
         return df
     except requests.exceptions.RequestException as e:
-        st.error(f"Erro ao carregar os dados da API: {e}")
+        st.error(f"Erro ao carregar os dados da API: {e}. Tente novamente mais tarde.")
         return pd.DataFrame()
 
 # Carrega os dados da API
 df_proposicoes = carregar_dados_da_api()
 
-# Título e barra de entrada
 st.title("Assistente de Dados da ALMG (Beta)")
-st.subheader("Faça uma pergunta sobre as proposições em tramitação")
+st.subheader("Faça uma pergunta sobre as proposições ou peça um gráfico")
 
-# Verifica se os dados foram carregados antes de continuar
 if not df_proposicoes.empty and genai.api_key:
-    user_query = st.text_input("Sua pergunta:", placeholder="Ex: Quantos projetos de lei estão em tramitação?")
+    user_query = st.text_input("Sua pergunta:", placeholder="Ex: Quantas proposições foram apresentadas por ano?")
     
     if user_query:
-        st.info("Buscando a resposta com a ajuda do Gemini...")
+        st.info("Buscando a resposta e gerando o resultado...")
         
-        # Converte o DataFrame para um formato de texto que o Gemini pode processar
-        # Usamos to_string() para enviar os dados como uma tabela formatada em texto
+        # Converte o DataFrame para um formato de texto para o Gemini
         data_string = df_proposicoes.to_string(index=False)
         
-        # Constrói o prompt (instrução) para o modelo Gemini
+        # Constrói o prompt com instruções para gerar código proativo
         prompt = f"""
-        Você é um assistente de dados da Assembleia Legislativa de Minas Gerais. Sua função é analisar os dados fornecidos abaixo e responder à pergunta do usuário.
-        
+        Você é um assistente de dados da Assembleia Legislativa de Minas Gerais.
+        Sua função é analisar os dados fornecidos abaixo e responder à pergunta do usuário.
+
+        Se a pergunta do usuário for sobre contagens, evoluções ou comparações (ex: "quantas proposições", "por ano", "mais comuns"), além da resposta textual, inclua um bloco de código Python com um gráfico para complementar a informação.
+
         Dados de proposições:
         {data_string}
-        
+
+        Instruções para gráficos:
+        - Use a biblioteca `altair` para criar os gráficos.
+        - O DataFrame se chama `df_proposicoes`.
+        - Use a formatação de bloco de código Python: ```python ... ```
+        - Exemplo de código para um gráfico de barras:
+          ```python
+          chart = alt.Chart(df_proposicoes).mark_bar().encode(
+              x=alt.X('ano:O', title='Ano'),
+              y=alt.Y('count():Q', title='Quantidade')
+          ).properties(
+              title='Número de Proposições por Ano'
+          )
+          st.altair_chart(chart, use_container_width=True)
+          ```
+
         Pergunta do usuário: {user_query}
-        
-        Responda à pergunta do usuário com base apenas nos dados fornecidos. Se a resposta não puder ser encontrada nos dados, diga que a informação não está disponível.
         """
         
         try:
-            # Envia a instrução e os dados para o modelo Gemini
             model = genai.GenerativeModel('gemini-pro')
             response = model.generate_content(prompt)
+            response_text = response.text.strip()
             
-            # Exibe a resposta formatada
-            st.markdown(response.text)
+            # --- Lógica para detectar e executar o código dentro da resposta ---
+            if "```python" in response_text:
+                parts = response_text.split("```python")
+                text_part = parts[0].strip()
+                code_part = parts[1].split("```")[0].strip()
+                
+                # Exibe a parte textual da resposta
+                if text_part:
+                    st.markdown(text_part)
+
+                # Exibe e executa o código
+                st.code(code_part, language='python')
+                exec(code_part)
+            else:
+                # Se não houver código, exibe apenas a resposta textual
+                st.markdown(response_text)
             
         except Exception as e:
-            st.error(f"Ocorreu um erro ao processar a resposta do Gemini: {e}")
-            st.caption("Verifique se a sua chave da API está correta e se o serviço está ativo.")
+            st.error(f"Ocorreu um erro: {e}")
+            st.caption("Verifique se a sua chave da API está correta ou se a pergunta é clara.")
 
 else:
     st.warning("Dados não carregados. Não é possível usar o assistente de dados.")
