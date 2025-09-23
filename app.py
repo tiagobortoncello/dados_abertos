@@ -6,97 +6,97 @@ import altair as alt
 
 st.set_page_config(layout="wide")
 
-# Configura a chave da API do Gemini de forma segura
+# Corrected API Key configuration
 try:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 except Exception as e:
-    st.error(f"Erro na configuração da API do Gemini: {e}")
-    st.info("Por favor, adicione sua chave de API nas configurações do aplicativo no Streamlit Cloud.")
+    st.error(f"Error configuring the Gemini API: {e}")
+    st.info("Please add your API key to the app's secrets in Streamlit Cloud.")
 
-# URL da API de Teste (Open Library API)
+# Test API URL (Open Library API)
 url = "https://openlibrary.org/search.json?q=python"
 
 @st.cache_data(ttl=3600)
-def carregar_dados_da_api():
-    """Faz a chamada à API de Teste e retorna um DataFrame."""
+def load_api_data():
+    """Fetches data from the Test API and returns a DataFrame."""
     try:
-        st.info("Buscando dados da Open Library API...")
+        st.info("Fetching data from the Open Library API...")
         response = requests.get(url)
-        response.raise_for_status() 
-        dados = response.json()
-        
-        # A chave de dados nesta API é 'docs'
-        df = pd.DataFrame(dados.get('docs', []))
-        
+        response.raise_for_status()
+        data = response.json()
+
+        # The data key in this API is 'docs'
+        df = pd.DataFrame(data.get('docs', []))
+
         if not df.empty:
-            # Lista de colunas que queremos. O código lidará com colunas ausentes.
-            colunas_desejadas = ['title', 'first_publish_year', 'author_name', 'subject']
-            
-            # Filtra as colunas que realmente existem no DataFrame
-            colunas_existentes = [col for col in colunas_desejadas if col in df.columns]
-            
-            # Reorganiza o DataFrame com apenas as colunas existentes
-            df = df[colunas_existentes]
-            
+            # List of desired columns. The code will handle missing columns.
+            desired_columns = ['title', 'first_publish_year', 'author_name', 'subject']
+
+            # Filter for columns that actually exist in the DataFrame
+            existing_columns = [col for col in desired_columns if col in df.columns]
+
+            # Reorganize the DataFrame with only the existing columns
+            df = df[existing_columns]
+
         return df
     except requests.exceptions.RequestException as e:
-        st.error(f"Erro ao carregar os dados da API: {e}. Verifique o link.")
+        st.error(f"Error loading data from the API: {e}. Check the link.")
         return pd.DataFrame()
     except Exception as e:
-        st.error(f"Erro ao processar os dados da API: {e}.")
+        st.error(f"Error processing API data: {e}.")
         return pd.DataFrame()
 
-# Carrega os dados da API
-df_proposicoes = carregar_dados_da_api()
+# Load API data
+df_data = load_api_data()
 
-st.title("Assistente de Dados (Modo de Teste)")
-st.subheader("Faça perguntas sobre os livros listados")
+st.title("Data Assistant (Test Mode)")
+st.subheader("Ask questions about the listed books")
 
-# O assistente só é exibido se os dados e a chave do Gemini estão ok
-if not df_proposicoes.empty and genai.api_key:
-    user_query = st.text_input("Sua pergunta:", placeholder="Ex: Qual o ano de publicação mais comum?")
-    
+# The assistant is only shown if data and the Gemini key are loaded
+if not df_data.empty and genai.api_key:
+    user_query = st.text_input("Your question:", placeholder="Ex: What's the most common publication year?")
+
     if user_query:
-        st.info("Buscando a resposta e gerando o resultado...")
-        
-        data_string = df_proposicoes.to_string(index=False)
-        
+        st.info("Fetching response and generating output...")
+
+        data_string = df_data.to_string(index=False)
+
         prompt = f"""
-        Você é um assistente de dados sobre livros.
-        Analise os dados fornecidos abaixo e responda à pergunta do usuário.
+        You are a data assistant about books.
+        Analyze the provided data and answer the user's question.
 
-        Se a pergunta for sobre contagens ou anos, inclua um bloco de código Python com um gráfico para complementar a informação.
+        If the question is about counts or years, include a Python code block with a chart to supplement the information.
 
-        Dados de livros:
+        Book data:
         {data_string}
 
-        Instruções para gráficos:
-        - Use a biblioteca `altair`. O DataFrame se chama `df_proposicoes`.
-        - Use a formatação: ```python ... ```
-        - Exemplo:
+        Chart instructions:
+        - Use the `altair` library. The DataFrame is named `df_data`.
+        - Use the format: ```python ... ```
+        - Example:
           ```python
-          chart = alt.Chart(df_proposicoes).mark_bar().encode(
-              x=alt.X('first_publish_year:O', title='Ano de Publicação'),
-              y=alt.Y('count():Q', title='Quantidade')
+          chart = alt.Chart(df_data).mark_bar().encode(
+              x=alt.X('first_publish_year:O', title='Publication Year'),
+              y=alt.Y('count():Q', title='Count')
           ).properties(
-              title='Livros por Ano de Publicação'
+              title='Books by Publication Year'
           )
           st.altair_chart(chart, use_container_width=True)
           ```
 
-        Pergunta do usuário: {user_query}
+        User question: {user_query}
         """
-        
+
         try:
             model = genai.GenerativeModel('gemini-pro')
             response = model.generate_content(prompt)
             response_text = response.text.strip()
-            
+
             if "```python" in response_text:
                 parts = response_text.split("```python")
                 text_part = parts[0].strip()
                 code_part = parts[1].split("```")[0].strip()
-                
+
                 if text_part:
                     st.markdown(text_part)
 
@@ -104,10 +104,10 @@ if not df_proposicoes.empty and genai.api_key:
                 exec(code_part)
             else:
                 st.markdown(response_text)
-            
+
         except Exception as e:
-            st.error(f"Ocorreu um erro: {e}")
-            st.caption("Verifique se sua chave da API está correta ou se a pergunta é clara.")
+            st.error(f"An error occurred: {e}")
+            st.caption("Verify your API key is correct or your question is clear.")
 
 else:
-    st.warning("Dados não carregados. Não é possível usar o assistente.")
+    st.warning("Data not loaded. Cannot use the assistant.")
