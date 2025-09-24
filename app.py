@@ -20,7 +20,10 @@ def carregar_dados_da_api():
     """Faz a chamada à API e retorna um DataFrame do pandas."""
     try:
         st.info("Buscando dados na API da ALMG...")
-        response = requests.get(url, params={"formato": "json"})
+        
+        # AQUI FOI AJUSTADO: REMOVIDO O PARÂMETRO 'params'
+        response = requests.get(url)
+        
         response.raise_for_status() 
         dados = response.json()
         
@@ -72,15 +75,15 @@ if not df_proposicoes.empty and genai.api_key:
         - O DataFrame se chama `df_proposicoes`.
         - Use a formatação de bloco de código Python: ```python ... ```
         - Exemplo de código para um gráfico de barras:
-          ```python
-          chart = alt.Chart(df_proposicoes).mark_bar().encode(
-              x=alt.X('ano:O', title='Ano'),
-              y=alt.Y('count():Q', title='Quantidade')
-          ).properties(
-              title='Número de Proposições por Ano'
-          )
-          st.altair_chart(chart, use_container_width=True)
-          ```
+            ```python
+            chart = alt.Chart(df_proposicoes).mark_bar().encode(
+                x=alt.X('ano:O', title='Ano'),
+                y=alt.Y('count():Q', title='Quantidade')
+            ).properties(
+                title='Número de Proposições por Ano'
+            )
+            st.altair_chart(chart, use_container_width=True)
+            ```
 
         Pergunta do usuário: {user_query}
         """
