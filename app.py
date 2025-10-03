@@ -23,14 +23,17 @@ else:
 
 url_api = "https://dadosabertos.almg.gov.br/api/v2/proposicoes/pesquisa/avancada"
 
+# CORREÇÃO CRÍTICA: Mapeamento de Parâmetros com os códigos curtos da URL de exemplo
 PARAMETROS_ALMG = {
-    'siglaTipo': 'Sigla do tipo de Proposição (Ex: PL, PEC, REQ)',
-    'numero': 'Número da Proposição (apenas números)',
-    'ano': 'Ano da Proposição (apenas 4 dígitos)',
-    'palavraChave': 'Palavra-chave para pesquisa na Ementa',
+    'tp': 'Código do Tipo de Proposição (Ex: PL, PEC, REQ) - O código exato é gerado pelo Gemini', # siglaTipo
+    'expr': 'Palavra-chave ou Expressão para pesquisa na Ementa', # palavraChave
+    'p': 'Número da página (para paginação)', # pagina
+    'sit': 'Código da Situação/Status da Proposição (Ex: 1=Em Tramitação)', 
+    'ord': 'Código de Ordenação (Ex: 1=Mais Recente)',
     'dataInicial': 'Data de apresentação inicial (formato YYYY-MM-DD)',
-    'itensPorPagina': 'Limite de resultados (padrão 100, máximo 500)',
-    'pagina': 'Número da página (para paginação)'
+    'dataFinal': 'Data de apresentação final (formato YYYY-MM-DD)',
+    'itensPorPagina': 'Limite de resultados (padrão 100, máximo 500)'
+    # Remoção de 'ano' daqui para forçar o Gemini a usar datas ou o 'ano' será convertido internamente
 }
 
 # --- FUNÇÕES ---
@@ -44,7 +47,7 @@ def gerar_parametros_com_gemini(pergunta_usuario, parametros_validos):
     lista_de_parametros = "\n".join([f"- {k} ({v})" for k, v in parametros_validos.items()])
 
     prompt = f"""
-    Sua tarefa é converter a pergunta do usuário em um **objeto JSON** contendo os parâmetros de consulta válidos para a API de Proposições da ALMG.
+    Sua tarefa é converter a pergunta do usuário em um **objeto JSON** contendo os parâmetros de consulta válidos para a API de Proposições da ALMG. Use os **códigos curtos** fornecidos.
 
     Parâmetros Válidos:
     {lista_de_parametros}
@@ -52,17 +55,15 @@ def gerar_parametros_com_gemini(pergunta_usuario, parametros_validos):
     Instruções:
     1. Responda **APENAS** com o objeto JSON. Não inclua texto, explicação ou formatação Markdown (ex: ```json).
     2. O JSON deve conter apenas os parâmetros que foram explicitamente pedidos ou sugeridos na pergunta.
-    3. Use o tipo de dado correto (string, número).
-    4. Se o usuário perguntar por algo que a API não pode filtrar (ex: 'quantas proposições existem?'), retorne um JSON vazio: {{}}.
+    3. Para o parâmetro 'tp' (Tipo de Proposição), converta a sigla (PL, PEC) para a sigla, não para um código numérico. O servidor da ALMG deve aceitar a sigla no lugar do código.
+    4. Se o usuário perguntar por algo que a API não pode filtrar, retorne um JSON vazio: {{}}.
 
     Pergunta do Usuário: "{pergunta_usuario}"
     """
     
     try:
-        # Modelo ajustado para maior compatibilidade e velocidade
         model = genai.GenerativeModel('gemini-2.5-flash')
         
-        # Parâmetro 'temperature' removido para evitar erros de incompatibilidade do SDK
         response = model.generate_content(
             prompt, 
             stream=False     
@@ -84,21 +85,34 @@ def carregar_dados_da_api_dinamico(url, params=None):
     if params is None:
         params = {}
     
-    # 1. Garante o limite de página
     if 'itensPorPagina' not in params:
         params['itensPorPagina'] = 100 
-        
-    # 2. SOLUÇÃO DO ERRO 500: Garante que haja um filtro de pesquisa restritivo
-    filtros_pesquisa = ['siglaTipo', 'numero', 'ano', 'palavraChave', 'dataInicial']
     
-    # Se o Gemini não gerou filtros (ou a pergunta não continha filtros)
-    if not any(f in params for f in filtros_pesquisa):
-        # Filtros restritivos para evitar o erro 500 do servidor da ALMG
+    # 1. CONVERSÃO: Tratar o parâmetro 'ano' (se gerado pelo Gemini)
+    if 'ano' in params:
+        ano = params.pop('ano')
+        # Formato YYYY-MM-DD é o padrão para a API
+        params['dataInicial'] = f'{ano}-01-01'
+        params['dataFinal'] = f'{ano}-12-31'
+        st.info(f"Convertendo ano={ano} para o intervalo: {params['dataInicial']} a {params['dataFinal']}")
+
+
+    # 2. SOLUÇÃO DO ERRO 500: Garante que haja um filtro de pesquisa restritivo
+    
+    # Filtros de restrição (usando os códigos curtos)
+    filtros_restritivos = ['dataInicial', 'dataFinal', 'expr', 'tp', 'sit']
+    
+    # Verifica se a consulta não tem NENHUM filtro de restrição de período ou conteúdo
+    if not any(f in params for f in filtros_restritivos):
+        
+        # Filtros mais restritivos para evitar o erro 500 do servidor da ALMG
         ano_padrao = 2023
-        params['ano'] = ano_padrao
-        params['siglaTipo'] = 'PL' 
-        params['palavraChave'] = 'lei' # Adição que força a restrição da busca
-        st.info(f"Nenhum filtro de pesquisa gerado. Adicionando filtro padrão: **ano={ano_padrao}, siglaTipo='PL', palavraChave='lei'**")
+        params['dataInicial'] = f'{ano_padrao}-01-01'
+        params['dataFinal'] = f'{ano_padrao}-12-31'
+        params['tp'] = 'PL' # Código curto para Tipo de Proposição
+        params['expr'] = 'lei' # Código curto para Palavra-chave
+        
+        st.info(f"Nenhum filtro de pesquisa gerado. Adicionando filtro padrão (restritivo): **dataInicial={params['dataInicial']}, tp='PL', expr='lei'**")
     
     try:
         st.info(f"Buscando dados na API da ALMG com filtros: {params}")
@@ -115,7 +129,7 @@ def carregar_dados_da_api_dinamico(url, params=None):
         return df
         
     except requests.exceptions.HTTPError as e:
-        st.error(f"Erro no servidor da API: {e}. Isso indica uma falha no servidor da ALMG ao processar a consulta. Tente uma pergunta com filtros mais específicos.")
+        st.error(f"Erro no servidor da API: {e}. A URL que causou o erro 500 pode ser a única forma de contornar a instabilidade da API.")
         return pd.DataFrame()
     except requests.exceptions.RequestException as e:
         st.error(f"Erro de conexão com a API: {e}. Verifique sua conexão com a internet.")
