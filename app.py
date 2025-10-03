@@ -4,7 +4,7 @@ import requests
 import google.generativeai as genai
 import json 
 import altair as alt 
-import datetime # Novo import para obter o ano atual de forma confiável
+import datetime 
 
 st.set_page_config(layout="wide")
 
@@ -12,7 +12,6 @@ st.set_page_config(layout="wide")
 
 CHAVE_GEMINI_CONFIGURADA = False 
 
-# 1. Configuração da Chave da API do Gemini
 if "GEMINI_API_KEY" in st.secrets:
     try:
         genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
@@ -22,10 +21,8 @@ if "GEMINI_API_KEY" in st.secrets:
 else:
     st.warning("Chave da API do Gemini não encontrada nos segredos do Streamlit.")
 
-# URL da API da ALMG
 url_api = "https://dadosabertos.almg.gov.br/api/v2/proposicoes/pesquisa/avancada"
 
-# Mapeamento de Parâmetros Válidos da API para instruir o Gemini
 PARAMETROS_ALMG = {
     'siglaTipo': 'Sigla do tipo de Proposição (Ex: PL, PEC, REQ)',
     'numero': 'Número da Proposição (apenas números)',
@@ -62,9 +59,10 @@ def gerar_parametros_com_gemini(pergunta_usuario, parametros_validos):
     """
     
     try:
-        model = genai.GenerativeModel('gemini-pro')
+        # CORREÇÃO DO ERRO 404: Trocando para um modelo mais recente
+        model = genai.GenerativeModel('gemini-2.5-flash')
         
-        # CORREÇÃO DO ERRO 'temperature': Removendo o parâmetro para máxima compatibilidade
+        # CORREÇÃO DO ERRO 'temperature': Removendo o parâmetro
         response = model.generate_content(
             prompt, 
             stream=False     
@@ -76,7 +74,7 @@ def gerar_parametros_com_gemini(pergunta_usuario, parametros_validos):
         st.error(f"Erro: O Gemini não retornou um JSON válido. Resposta recebida: {response.text}")
         return {}
     except Exception as e:
-        # Erro genérico do Gemini (não relacionado ao parâmetro 'temperature' agora)
+        # O erro 404 do modelo aparecerá aqui
         st.error(f"Erro ao gerar JSON de parâmetros: {e}. Verifique o log do Streamlit.")
         return {}
 
@@ -87,19 +85,17 @@ def carregar_dados_da_api_dinamico(url, params=None):
     if params is None:
         params = {}
     
-    # 1. Garante o limite de página
     if 'itensPorPagina' not in params:
         params['itensPorPagina'] = 100 
         
-    # 2. CORREÇÃO DO ERRO 500: Garante que haja um filtro de pesquisa adequado
+    # CORREÇÃO DO ERRO 500: Garante que haja um filtro de pesquisa adequado
     filtros_pesquisa = ['siglaTipo', 'numero', 'ano', 'palavraChave', 'dataInicial']
     
-    # Verifica se o JSON gerado pelo Gemini não contém NENHUM filtro de pesquisa
     if not any(f in params for f in filtros_pesquisa):
-        # Se não houver filtros, força o filtro para o ano anterior E o tipo (PL)
-        ano_padrao = datetime.datetime.now().year - 1
+        # Força filtros para evitar o 500, usando um ano que deve ter dados
+        ano_padrao = 2023
         params['ano'] = ano_padrao
-        params['siglaTipo'] = 'PL' # Adiciona um filtro de tipo comum para evitar o erro 500
+        params['siglaTipo'] = 'PL' # Projeto de Lei é o tipo mais comum
         st.info(f"Nenhum filtro de pesquisa gerado. Adicionando filtro padrão: **ano={ano_padrao}, siglaTipo='PL'**")
     
     try:
@@ -147,16 +143,14 @@ if user_query:
         # 2. CARREGA OS DADOS COM OS PARÂMETROS (DINAMICAMENTE)
         df_proposicoes = carregar_dados_da_api_dinamico(url_api, params=api_params)
 
-        # 3. ANALISA OS DADOS FILTRADOS (Lógica do Gemini para Análise)
+        # 3. ANALISA OS DADOS FILTRADOS
         if not df_proposicoes.empty:
             
             st.success(f"Foram carregados **{len(df_proposicoes)}** proposições com os filtros aplicados.")
             
-            # --- INSIRA AQUI A SUA LÓGICA DE ANÁLISE (SEGUNDO PROMPT) ---
-            
             st.info("Passo 3: Analisando os dados filtrados e gerando a resposta e o gráfico...")
             
-            # Lembre-se de reinserir sua lógica original aqui para análise e execução do código Altair
+            # Sua lógica de análise (segundo prompt do Gemini) deve ser reinserida aqui.
             
             st.dataframe(df_proposicoes)
         else:
