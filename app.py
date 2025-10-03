@@ -2,19 +2,25 @@ import streamlit as st
 import pandas as pd
 import requests
 import google.generativeai as genai
-import json # Necessário para processar a resposta JSON do Gemini
-import altair as alt # Mantido para fins de análise futura
+import json 
+import altair as alt 
 
 st.set_page_config(layout="wide")
 
 # --- CONFIGURAÇÕES E CONSTANTES ---
 
+# Variável de controle para verificar o status da chave
+CHAVE_GEMINI_CONFIGURADA = False 
+
 # Configura a chave da API do Gemini de forma segura
 if "GEMINI_API_KEY" in st.secrets:
-    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+    try:
+        genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+        CHAVE_GEMINI_CONFIGURADA = True
+    except Exception as e:
+        st.error(f"Erro ao configurar a API do Gemini: {e}")
 else:
-    # Apenas um aviso, pois a aplicação ainda pode tentar carregar dados da ALMG
-    st.warning("Chave da API do Gemini não encontrada nos segredos do Streamlit. O assistente de análise e filtros não funcionará.")
+    st.warning("Chave da API do Gemini não encontrada nos segredos do Streamlit.")
 
 # URL da API da ALMG
 url_api = "https://dadosabertos.almg.gov.br/api/v2/proposicoes/pesquisa/avancada"
@@ -35,7 +41,8 @@ PARAMETROS_ALMG = {
 def gerar_parametros_com_gemini(pergunta_usuario, parametros_validos):
     """Usa o Gemini para converter a pergunta em um JSON de parâmetros da API."""
     
-    if not genai.api_key:
+    # Esta verificação garante que a função só será executada se a chave estiver configurada
+    if not CHAVE_GEMINI_CONFIGURADA:
         return {}
         
     lista_de_parametros = "\n".join([f"- {k} ({v})" for k, v in parametros_validos.items()])
@@ -83,21 +90,18 @@ def carregar_dados_da_api_dinamico(url, params=None):
     if params is None:
         params = {}
     
-    # Define um limite de resultados padrão se não for especificado, 
-    # garantindo que o volume de dados seja gerenciável.
+    # Define um limite de resultados padrão se não for especificado
     if 'itensPorPagina' not in params:
         params['itensPorPagina'] = 100 
     
     try:
         st.info(f"Buscando dados na API da ALMG com filtros: {params}")
         
-        # Faz a requisição usando os parâmetros gerados
         response = requests.get(url, params=params) 
         
-        response.raise_for_status() # Lança HTTPError para 4xx/5xx status
+        response.raise_for_status() 
         dados = response.json()
         
-        # O .get('list', []) evita erros se a chave 'list' não existir na resposta
         # CONFIRME se o nome da chave que contém a lista de proposições é 'list'
         df = pd.DataFrame(dados.get('list', []))
         
@@ -107,7 +111,6 @@ def carregar_dados_da_api_dinamico(url, params=None):
         return df
         
     except requests.exceptions.HTTPError as e:
-        # Tratamento de erro específico se houver um problema no servidor
         st.error(f"Erro no servidor da API: {e}. O modelo Gemini pode ter gerado um filtro inválido ou a ALMG impôs um limite de requisições.")
         return pd.DataFrame()
     except requests.exceptions.RequestException as e:
@@ -128,8 +131,9 @@ user_query = st.text_input("Sua pergunta ou filtro:", placeholder="Ex: Quero as 
 if user_query:
     st.markdown("---")
     
-    if not genai.api_key:
-        st.error("Por favor, configure sua chave da API do Gemini nos segredos do Streamlit para continuar.")
+    # A CORREÇÃO ESTÁ AQUI: Usamos a variável de controle definida no início.
+    if not CHAVE_GEMINI_CONFIGURADA: 
+        st.error("Por favor, configure sua chave da API do Gemini nos segredos do Streamlit para continuar com a geração de filtros.")
     
     else:
         # 1. GERA OS PARÂMETROS COM O GEMINI
@@ -141,15 +145,12 @@ if user_query:
         # 3. ANALISA OS DADOS FILTRADOS (Recuperando a lógica original)
         if not df_proposicoes.empty:
             
-            # --- SEU CÓDIGO DE ANÁLISE COM O SEGUNDO PROMPT VEM AQUI ---
-            
-            # Exemplo de continuação da análise:
             st.success(f"Foram carregados **{len(df_proposicoes)}** proposições com os filtros aplicados.")
             
-            # Use o Gemini para fazer a análise estatística dos dados filtrados
-            st.info("Passo 3: Analisando os dados filtrados e gerando a resposta e o gráfico...")
+            # --- INSIRA AQUI A SUA LÓGICA DE ANÁLISE COM O SEGUNDO PROMPT DO GEMINI ---
             
-            # A lógica do SEGUNDO PROMPT (Análise e Gráfico) deve ser reinserida aqui:
+            # Exemplo de onde a lógica de análise deve continuar:
+            # st.info("Passo 3: Analisando os dados filtrados e gerando a resposta e o gráfico...")
             # data_string = df_proposicoes.to_string(index=False)
             # prompt_analise = f"""...use os dados {data_string} para responder a {user_query} e gere um gráfico..."""
             # ... (Chamada para o modelo e execução do código do gráfico)
