@@ -138,6 +138,20 @@ def carregar_dados_da_api_dinamico(url, params=None):
 st.title("Assistente de Pesquisa e Análise de Proposições da ALMG (Beta)")
 st.subheader("Use linguagem natural para filtrar e analisar os dados.")
 
+# NOVO BLOCO DE INSTRUÇÕES
+with st.expander("❓ Dicas: Como fazer sua pergunta para o Assistente da ALMG"):
+    st.markdown("""
+    Devido à fragilidade da API da ALMG, sua pergunta deve ser **o mais específica possível** e incluir:
+
+    1.  **Tipo de Proposição (com a sigla e o nome completo):** Ex: **PL (Projeto de Lei)** ou **PEC (Proposta de Emenda à Constituição)**.
+    2.  **Período:** O **ano** desejado (Ex: **2024**) ou um intervalo de datas (Ex: **'de 2023-01-01 a 2023-03-31'**).
+    3.  **Palavra-chave:** O termo que deve estar na ementa (Ex: **'saúde'**).
+    
+    ### Exemplo de Pergunta que Funciona:
+    
+    > **"Quero as proposições do tipo PL (Projeto de Lei) de 2023 que contenham a palavra 'saúde' na ementa. Coloque em ordem de mais recente."**
+    """)
+
 user_query = st.text_input("Sua pergunta ou filtro:", placeholder="Ex: Quero as proposições PL de 2023 com a palavra 'saúde' e depois me diga o tipo mais comum")
 
 if user_query:
