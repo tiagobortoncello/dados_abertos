@@ -59,10 +59,10 @@ def gerar_parametros_com_gemini(pergunta_usuario, parametros_validos):
     """
     
     try:
-        # CORREÇÃO DO ERRO 404: Trocando para um modelo mais recente
+        # Modelo ajustado para maior compatibilidade e velocidade
         model = genai.GenerativeModel('gemini-2.5-flash')
         
-        # CORREÇÃO DO ERRO 'temperature': Removendo o parâmetro
+        # Parâmetro 'temperature' removido para evitar erros de incompatibilidade do SDK
         response = model.generate_content(
             prompt, 
             stream=False     
@@ -74,7 +74,6 @@ def gerar_parametros_com_gemini(pergunta_usuario, parametros_validos):
         st.error(f"Erro: O Gemini não retornou um JSON válido. Resposta recebida: {response.text}")
         return {}
     except Exception as e:
-        # O erro 404 do modelo aparecerá aqui
         st.error(f"Erro ao gerar JSON de parâmetros: {e}. Verifique o log do Streamlit.")
         return {}
 
@@ -85,18 +84,21 @@ def carregar_dados_da_api_dinamico(url, params=None):
     if params is None:
         params = {}
     
+    # 1. Garante o limite de página
     if 'itensPorPagina' not in params:
         params['itensPorPagina'] = 100 
         
-    # CORREÇÃO DO ERRO 500: Garante que haja um filtro de pesquisa adequado
+    # 2. SOLUÇÃO DO ERRO 500: Garante que haja um filtro de pesquisa restritivo
     filtros_pesquisa = ['siglaTipo', 'numero', 'ano', 'palavraChave', 'dataInicial']
     
+    # Se o Gemini não gerou filtros (ou a pergunta não continha filtros)
     if not any(f in params for f in filtros_pesquisa):
-        # Força filtros para evitar o 500, usando um ano que deve ter dados
+        # Filtros restritivos para evitar o erro 500 do servidor da ALMG
         ano_padrao = 2023
         params['ano'] = ano_padrao
-        params['siglaTipo'] = 'PL' # Projeto de Lei é o tipo mais comum
-        st.info(f"Nenhum filtro de pesquisa gerado. Adicionando filtro padrão: **ano={ano_padrao}, siglaTipo='PL'**")
+        params['siglaTipo'] = 'PL' 
+        params['palavraChave'] = 'lei' # Adição que força a restrição da busca
+        st.info(f"Nenhum filtro de pesquisa gerado. Adicionando filtro padrão: **ano={ano_padrao}, siglaTipo='PL', palavraChave='lei'**")
     
     try:
         st.info(f"Buscando dados na API da ALMG com filtros: {params}")
@@ -113,7 +115,7 @@ def carregar_dados_da_api_dinamico(url, params=None):
         return df
         
     except requests.exceptions.HTTPError as e:
-        st.error(f"Erro no servidor da API: {e}. A API pode exigir filtros adicionais, ou o limite de requisições foi atingido.")
+        st.error(f"Erro no servidor da API: {e}. Isso indica uma falha no servidor da ALMG ao processar a consulta. Tente uma pergunta com filtros mais específicos.")
         return pd.DataFrame()
     except requests.exceptions.RequestException as e:
         st.error(f"Erro de conexão com a API: {e}. Verifique sua conexão com a internet.")
