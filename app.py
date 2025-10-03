@@ -23,8 +23,7 @@ else:
 
 url_api = "https://dadosabertos.almg.gov.br/api/v2/proposicoes/pesquisa/avancada"
 
-# CORREÇÃO FINAL: Mapeamento de Parâmetros com os códigos curtos e 
-# instruindo o Gemini a usar códigos numéricos (exemplo '10' para PL)
+# Mapeamento de Parâmetros com os códigos curtos da API
 PARAMETROS_ALMG = {
     'tp': 'CÓDIGO NUMÉRICO do Tipo de Proposição (Ex: 10 para PL, 100 para PEC). O Gemini deve gerar o código numérico.',
     'expr': 'Palavra-chave ou Expressão para pesquisa na Ementa',
@@ -56,7 +55,7 @@ def gerar_parametros_com_gemini(pergunta_usuario, parametros_validos):
     1. Responda **APENAS** com o objeto JSON. Não inclua texto, explicação ou formatação Markdown (ex: ```json).
     2. O JSON deve conter apenas os parâmetros que foram explicitamente pedidos ou sugeridos na pergunta.
     3. Para o parâmetro 'tp' (Tipo de Proposição), converta a sigla (PL, PEC, REQ) para o **código numérico** mais provável (Ex: PL -> 10, PEC -> 100).
-    4. Se o usuário perguntar por algo que a API não pode filtrar, retorne um JSON vazio: {{}}.
+    4. Se o usuário perguntar por algo que a API não pode filtrar (Ex: 'quantas proposições existem?'), retorne um JSON vazio: {{}}.
 
     Pergunta do Usuário: "{pergunta_usuario}"
     """
@@ -91,19 +90,23 @@ def carregar_dados_da_api_dinamico(url, params=None):
     # 1. CONVERSÃO: Tratar o parâmetro 'ano' (se gerado pelo Gemini)
     if 'ano' in params:
         ano = params.pop('ano')
-        # A API pode exigir filtros de data
         params['dataInicial'] = f'{ano}-01-01'
         params['dataFinal'] = f'{ano}-12-31'
         st.info(f"Convertendo ano={ano} para o intervalo: {params['dataInicial']} a {params['dataFinal']}")
 
 
-    # 2. REMOÇÃO DO FILTRO PADRÃO: Removido o bloco de código que adicionava filtros rígidos.
-    # Se o Gemini não gerou filtros (ex: pergunta sobre a quantidade), a chamada será feita
-    # com o que foi gerado, e se falhar, o usuário será alertado.
+    # 2. FILTRO DE EMERGÊNCIA (SOLUÇÃO FINAL PARA O ERRO 500)
+    # Se o único parâmetro é 'itensPorPagina', a chamada vai falhar.
+    if len(params) <= 1: 
+        
+        # Filtros restritivos e NUMÉRICOS para evitar o Erro 500 do servidor
+        params['tp'] = 10 # Código NUMÉRICO mais provável para PL (Projeto de Lei)
+        params['dataInicial'] = '2023-01-01'
+        params['dataFinal'] = '2023-03-01' # Filtra apenas 3 meses para diminuir a carga
+        
+        st.warning("O Gemini não gerou filtros restritivos. **Acionando filtro de emergência** para evitar Erro 500 (tp=10, Jan-Mar/2023).")
+        st.info(f"Filtros de emergência: tp={params['tp']}, dataInicial={params['dataInicial']}")
     
-    if not params:
-        st.warning("Nenhum filtro de pesquisa foi gerado pelo Gemini. A API será chamada sem restrições (o que pode causar Erro 500).")
-
     try:
         st.info(f"Buscando dados na API da ALMG com filtros: {params}")
         
@@ -115,13 +118,12 @@ def carregar_dados_da_api_dinamico(url, params=None):
         df = pd.DataFrame(dados.get('list', []))
         
         if not df.empty:
-             # Manter nomes de colunas em português
              df = df[['siglaTipo', 'numero', 'ano', 'ementa', 'apresentacao']]
         return df
         
     except requests.exceptions.HTTPError as e:
         # Erro 400 (Bad Request) ou 500 (Server Error)
-        st.error(f"Erro no servidor da API: {e}. Isso indica que a API rejeitou os filtros. Verifique se o Gemini gerou os códigos numéricos corretos (tp, sit, ord).")
+        st.error(f"Erro no servidor da API: {e}. Isso indica que a API rejeitou os filtros. Tente refinar a sua pergunta, usando explicitamente o ano e a sigla (Ex: 'PL de 2023 sobre saúde').")
         return pd.DataFrame()
     except requests.exceptions.RequestException as e:
         st.error(f"Erro de conexão com a API: {e}. Verifique sua conexão com a internet.")
