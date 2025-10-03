@@ -4,12 +4,7 @@ import requests
 import google.generativeai as genai
 import json 
 import altair as alt 
-
-# Importação necessária para corrigir o erro 'temperature'
-# OBS: O GenerationConfig é a forma mais moderna, mas o SDK do Streamlit 
-# pode exigir que os parâmetros sejam passados diretamente.
-# Caso a versão do seu SDK do Google AI seja incompatível com 'config' ou 'temperature',
-# esta versão que passa os argumentos diretos geralmente funciona.
+import datetime # Novo import para obter o ano atual de forma confiável
 
 st.set_page_config(layout="wide")
 
@@ -69,11 +64,10 @@ def gerar_parametros_com_gemini(pergunta_usuario, parametros_validos):
     try:
         model = genai.GenerativeModel('gemini-pro')
         
-        # CORREÇÃO DO ERRO 'config': Passando os parâmetros diretamente
+        # CORREÇÃO DO ERRO 'temperature': Removendo o parâmetro para máxima compatibilidade
         response = model.generate_content(
             prompt, 
-            temperature=0.1, # Passando diretamente para garantir a compatibilidade
-            stream=False     # Importante para obter o JSON completo em uma única resposta
+            stream=False     
         )
         
         return json.loads(response.text.strip())
@@ -82,7 +76,8 @@ def gerar_parametros_com_gemini(pergunta_usuario, parametros_validos):
         st.error(f"Erro: O Gemini não retornou um JSON válido. Resposta recebida: {response.text}")
         return {}
     except Exception as e:
-        st.error(f"Erro ao gerar JSON de parâmetros: {e}")
+        # Erro genérico do Gemini (não relacionado ao parâmetro 'temperature' agora)
+        st.error(f"Erro ao gerar JSON de parâmetros: {e}. Verifique o log do Streamlit.")
         return {}
 
 
@@ -96,15 +91,16 @@ def carregar_dados_da_api_dinamico(url, params=None):
     if 'itensPorPagina' not in params:
         params['itensPorPagina'] = 100 
         
-    # 2. CORREÇÃO DO ERRO 500: Garante que haja um filtro de pesquisa para evitar falha no servidor
+    # 2. CORREÇÃO DO ERRO 500: Garante que haja um filtro de pesquisa adequado
     filtros_pesquisa = ['siglaTipo', 'numero', 'ano', 'palavraChave', 'dataInicial']
     
     # Verifica se o JSON gerado pelo Gemini não contém NENHUM filtro de pesquisa
     if not any(f in params for f in filtros_pesquisa):
-        # Se não houver filtros, força o filtro para o ano anterior
-        ano_padrao = pd.Timestamp.now().year - 1
+        # Se não houver filtros, força o filtro para o ano anterior E o tipo (PL)
+        ano_padrao = datetime.datetime.now().year - 1
         params['ano'] = ano_padrao
-        st.info(f"Nenhum filtro de pesquisa gerado. Adicionando filtro padrão: **ano={ano_padrao}**")
+        params['siglaTipo'] = 'PL' # Adiciona um filtro de tipo comum para evitar o erro 500
+        st.info(f"Nenhum filtro de pesquisa gerado. Adicionando filtro padrão: **ano={ano_padrao}, siglaTipo='PL'**")
     
     try:
         st.info(f"Buscando dados na API da ALMG com filtros: {params}")
