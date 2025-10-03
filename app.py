@@ -21,8 +21,6 @@ else:
     st.warning("Chave da API do Gemini não encontrada nos segredos do Streamlit.")
 
 # --- MAPA COMPLETO DE ENDPOINTS E PARÂMETROS ---
-# Note a diferença no formato de data (YYYY-MM-DD vs AAAAMMDD)
-
 ENDPOINTS_MAP = {
     "proposicoes": {
         "url": "https://dadosabertos.almg.gov.br/api/v2/proposicoes/pesquisa/avancada",
@@ -87,7 +85,6 @@ ENDPOINTS_MAP = {
         }
     }
 }
-# --- FIM DO MAPA ---
 
 # --- FUNÇÕES ---
 
@@ -125,8 +122,23 @@ def gerar_parametros_com_gemini(pergunta_usuario, endpoints_map):
         model = genai.GenerativeModel('gemini-2.5-flash')
         response = model.generate_content(prompt, stream=False)
         
-        resultado = json.loads(response.text.strip())
+        raw_text = response.text.strip()
         
+        # --- CORREÇÃO CRÍTICA: Extração robusta do JSON ---
+        clean_json_string = ""
+        if '{' in raw_text and '}' in raw_text:
+            # Encontra a primeira e a última chave para isolar o JSON puro
+            start_index = raw_text.find('{')
+            end_index = raw_text.rfind('}')
+            clean_json_string = raw_text[start_index:end_index + 1]
+        else:
+            st.error(f"Erro de formato: O Gemini não incluiu chaves JSON ({{}}) na resposta. Resposta bruta: {raw_text}")
+            return None
+        # --- FIM DA CORREÇÃO ---
+
+        resultado = json.loads(clean_json_string)
+        
+        # Validação básica da estrutura do resultado
         if 'endpoint' in resultado and 'params' in resultado:
             return resultado
         else:
@@ -134,7 +146,8 @@ def gerar_parametros_com_gemini(pergunta_usuario, endpoints_map):
             return None
         
     except json.JSONDecodeError:
-        st.error(f"Erro: Gemini não retornou um JSON válido. Resposta: {response.text}")
+        # Mostra a string que falhou na conversão
+        st.error(f"Erro: O Gemini não retornou um JSON válido. A string extraída que falhou foi: {clean_json_string}")
         return None
     except Exception as e:
         st.error(f"Erro ao gerar JSON: {e}")
@@ -167,13 +180,11 @@ def carregar_dados_da_api_dinamico(resultado_gemini):
         date_format = config.get("date_format")
         
         if date_format == "YYYY-MM-DD":
-            # Usado pelo endpoint 'proposicoes'
             params['dataInicial'] = f'{ano}-01-01'
             params['dataFinal'] = f'{ano}-12-31'
             st.info(f"Convertendo ano={ano} para o intervalo YYYY-MM-DD: {params['dataInicial']} a {params['dataFinal']}")
         
         elif date_format == "AAAAMMDD":
-            # Usado pelos endpoints 'agenda', 'diario_legislativo', 'comissoes_reunioes'
             params['ini'] = f'{ano}0101'
             params['fim'] = f'{ano}1231'
             st.info(f"Convertendo ano={ano} para o intervalo AAAAMMDD: {params['ini']} a {params['fim']}")
@@ -194,7 +205,7 @@ def carregar_dados_da_api_dinamico(resultado_gemini):
         response.raise_for_status() 
         dados = response.json()
         
-        # TRATAMENTO DE RESPOSTA
+        # TRATAMENTO DE RESPOSTA (Tenta extrair a lista principal de qualquer formato)
         if 'list' in dados:
             df = pd.DataFrame(dados.get('list', []))
         elif 'resultadoPesquisa' in dados and 'lista' in dados['resultadoPesquisa']:
@@ -202,7 +213,6 @@ def carregar_dados_da_api_dinamico(resultado_gemini):
         elif isinstance(dados, list):
             df = pd.DataFrame(dados)
         else:
-            # Tenta pegar a primeira chave que é uma lista, como listaDeputado, listaMunicipio, etc.
             list_key = next((k for k, v in dados.items() if isinstance(v, list)), None)
             if list_key:
                  df = pd.DataFrame(dados.get(list_key, []))
