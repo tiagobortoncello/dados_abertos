@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import requests
 import google.generativeai as genai
+from google.generativeai.types import GenerationConfig # <-- Nova importação para configurar o modelo
 import json 
 import altair as alt 
 
@@ -41,7 +42,6 @@ PARAMETROS_ALMG = {
 def gerar_parametros_com_gemini(pergunta_usuario, parametros_validos):
     """Usa o Gemini para converter a pergunta em um JSON de parâmetros da API."""
     
-    # Esta verificação garante que a função só será executada se a chave estiver configurada
     if not CHAVE_GEMINI_CONFIGURADA:
         return {}
         
@@ -71,9 +71,20 @@ def gerar_parametros_com_gemini(pergunta_usuario, parametros_validos):
     
     try:
         model = genai.GenerativeModel('gemini-pro')
-        response = model.generate_content(prompt, temperature=0.1)
         
-        # Tenta carregar o JSON (o Gemini deve retornar APENAS o JSON)
+        # --- CORREÇÃO DO ERRO 'temperature' ---
+        # Cria o objeto de configuração para passar a temperatura e outros parâmetros
+        config = GenerationConfig(
+            temperature=0.1, # Mantemos a temperatura baixa para respostas mais previsíveis (JSON)
+        )
+        
+        # Passa o objeto 'config' para o generate_content
+        response = model.generate_content(
+            prompt, 
+            config=config # Uso correto do parâmetro de configuração
+        )
+        # -------------------------------------
+        
         return json.loads(response.text.strip())
         
     except json.JSONDecodeError:
@@ -131,7 +142,7 @@ user_query = st.text_input("Sua pergunta ou filtro:", placeholder="Ex: Quero as 
 if user_query:
     st.markdown("---")
     
-    # A CORREÇÃO ESTÁ AQUI: Usamos a variável de controle definida no início.
+    # A verificação da chave (corrigida na etapa anterior)
     if not CHAVE_GEMINI_CONFIGURADA: 
         st.error("Por favor, configure sua chave da API do Gemini nos segredos do Streamlit para continuar com a geração de filtros.")
     
@@ -149,11 +160,10 @@ if user_query:
             
             # --- INSIRA AQUI A SUA LÓGICA DE ANÁLISE COM O SEGUNDO PROMPT DO GEMINI ---
             
-            # Exemplo de onde a lógica de análise deve continuar:
-            # st.info("Passo 3: Analisando os dados filtrados e gerando a resposta e o gráfico...")
-            # data_string = df_proposicoes.to_string(index=False)
-            # prompt_analise = f"""...use os dados {data_string} para responder a {user_query} e gere um gráfico..."""
-            # ... (Chamada para o modelo e execução do código do gráfico)
+            st.info("Passo 3: Analisando os dados filtrados e gerando a resposta e o gráfico...")
+            
+            # Lembre-se de reinserir sua lógica original aqui para análise e execução do código Altair
+            # ...
             
             st.dataframe(df_proposicoes)
         else:
