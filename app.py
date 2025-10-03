@@ -2,18 +2,22 @@ import streamlit as st
 import pandas as pd
 import requests
 import google.generativeai as genai
-from google.generativeai.types import GenerationConfig # <-- Nova importação para configurar o modelo
 import json 
 import altair as alt 
+
+# Importação necessária para corrigir o erro 'temperature'
+# OBS: O GenerationConfig é a forma mais moderna, mas o SDK do Streamlit 
+# pode exigir que os parâmetros sejam passados diretamente.
+# Caso a versão do seu SDK do Google AI seja incompatível com 'config' ou 'temperature',
+# esta versão que passa os argumentos diretos geralmente funciona.
 
 st.set_page_config(layout="wide")
 
 # --- CONFIGURAÇÕES E CONSTANTES ---
 
-# Variável de controle para verificar o status da chave
 CHAVE_GEMINI_CONFIGURADA = False 
 
-# Configura a chave da API do Gemini de forma segura
+# 1. Configuração da Chave da API do Gemini
 if "GEMINI_API_KEY" in st.secrets:
     try:
         genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
@@ -26,7 +30,7 @@ else:
 # URL da API da ALMG
 url_api = "https://dadosabertos.almg.gov.br/api/v2/proposicoes/pesquisa/avancada"
 
-# Mapeamento de Parâmetros Válidos da API (O 'DNA' que o Gemini usará)
+# Mapeamento de Parâmetros Válidos da API para instruir o Gemini
 PARAMETROS_ALMG = {
     'siglaTipo': 'Sigla do tipo de Proposição (Ex: PL, PEC, REQ)',
     'numero': 'Número da Proposição (apenas números)',
@@ -59,31 +63,18 @@ def gerar_parametros_com_gemini(pergunta_usuario, parametros_validos):
     3. Use o tipo de dado correto (string, número).
     4. Se o usuário perguntar por algo que a API não pode filtrar (ex: 'quantas proposições existem?'), retorne um JSON vazio: {{}}.
 
-    Exemplos:
-    - Pergunta: "Quero todos os projetos de lei (PL) do ano de 2024"
-    - Resposta: {{"siglaTipo": "PL", "ano": 2024}}
-    
-    - Pergunta: "Busque por propostas com a palavra chave 'saneamento'"
-    - Resposta: {{"palavraChave": "saneamento"}}
-
     Pergunta do Usuário: "{pergunta_usuario}"
     """
     
     try:
         model = genai.GenerativeModel('gemini-pro')
         
-        # --- CORREÇÃO DO ERRO 'temperature' ---
-        # Cria o objeto de configuração para passar a temperatura e outros parâmetros
-        config = GenerationConfig(
-            temperature=0.1, # Mantemos a temperatura baixa para respostas mais previsíveis (JSON)
-        )
-        
-        # Passa o objeto 'config' para o generate_content
+        # CORREÇÃO DO ERRO 'config': Passando os parâmetros diretamente
         response = model.generate_content(
             prompt, 
-            config=config # Uso correto do parâmetro de configuração
+            temperature=0.1, # Passando diretamente para garantir a compatibilidade
+            stream=False     # Importante para obter o JSON completo em uma única resposta
         )
-        # -------------------------------------
         
         return json.loads(response.text.strip())
         
@@ -101,9 +92,19 @@ def carregar_dados_da_api_dinamico(url, params=None):
     if params is None:
         params = {}
     
-    # Define um limite de resultados padrão se não for especificado
+    # 1. Garante o limite de página
     if 'itensPorPagina' not in params:
         params['itensPorPagina'] = 100 
+        
+    # 2. CORREÇÃO DO ERRO 500: Garante que haja um filtro de pesquisa para evitar falha no servidor
+    filtros_pesquisa = ['siglaTipo', 'numero', 'ano', 'palavraChave', 'dataInicial']
+    
+    # Verifica se o JSON gerado pelo Gemini não contém NENHUM filtro de pesquisa
+    if not any(f in params for f in filtros_pesquisa):
+        # Se não houver filtros, força o filtro para o ano anterior
+        ano_padrao = pd.Timestamp.now().year - 1
+        params['ano'] = ano_padrao
+        st.info(f"Nenhum filtro de pesquisa gerado. Adicionando filtro padrão: **ano={ano_padrao}**")
     
     try:
         st.info(f"Buscando dados na API da ALMG com filtros: {params}")
@@ -113,16 +114,14 @@ def carregar_dados_da_api_dinamico(url, params=None):
         response.raise_for_status() 
         dados = response.json()
         
-        # CONFIRME se o nome da chave que contém a lista de proposições é 'list'
         df = pd.DataFrame(dados.get('list', []))
         
         if not df.empty:
-             # Seleciona apenas as colunas úteis para a análise
              df = df[['siglaTipo', 'numero', 'ano', 'ementa', 'apresentacao']]
         return df
         
     except requests.exceptions.HTTPError as e:
-        st.error(f"Erro no servidor da API: {e}. O modelo Gemini pode ter gerado um filtro inválido ou a ALMG impôs um limite de requisições.")
+        st.error(f"Erro no servidor da API: {e}. A API pode exigir filtros adicionais, ou o limite de requisições foi atingido.")
         return pd.DataFrame()
     except requests.exceptions.RequestException as e:
         st.error(f"Erro de conexão com a API: {e}. Verifique sua conexão com a internet.")
@@ -142,7 +141,6 @@ user_query = st.text_input("Sua pergunta ou filtro:", placeholder="Ex: Quero as 
 if user_query:
     st.markdown("---")
     
-    # A verificação da chave (corrigida na etapa anterior)
     if not CHAVE_GEMINI_CONFIGURADA: 
         st.error("Por favor, configure sua chave da API do Gemini nos segredos do Streamlit para continuar com a geração de filtros.")
     
@@ -153,17 +151,16 @@ if user_query:
         # 2. CARREGA OS DADOS COM OS PARÂMETROS (DINAMICAMENTE)
         df_proposicoes = carregar_dados_da_api_dinamico(url_api, params=api_params)
 
-        # 3. ANALISA OS DADOS FILTRADOS (Recuperando a lógica original)
+        # 3. ANALISA OS DADOS FILTRADOS (Lógica do Gemini para Análise)
         if not df_proposicoes.empty:
             
             st.success(f"Foram carregados **{len(df_proposicoes)}** proposições com os filtros aplicados.")
             
-            # --- INSIRA AQUI A SUA LÓGICA DE ANÁLISE COM O SEGUNDO PROMPT DO GEMINI ---
+            # --- INSIRA AQUI A SUA LÓGICA DE ANÁLISE (SEGUNDO PROMPT) ---
             
             st.info("Passo 3: Analisando os dados filtrados e gerando a resposta e o gráfico...")
             
             # Lembre-se de reinserir sua lógica original aqui para análise e execução do código Altair
-            # ...
             
             st.dataframe(df_proposicoes)
         else:
